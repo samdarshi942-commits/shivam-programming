@@ -7,7 +7,24 @@ service cloud.firestore {
     match /users/{uid} {
       allow read: if signedIn();
       allow create: if isOwner(uid) && request.resource.data.uid == request.auth.uid;
-      allow update: if isOwner(uid) && request.resource.data.uid == resource.data.uid;
+      // Owners may update their own profile. Other signed-in users may only
+      // add/remove their own UID in this user's followers array.
+      allow update: if (isOwner(uid) && request.resource.data.uid == resource.data.uid)
+        || (signedIn()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['followers'])
+          // Older user profiles may not have a followers field yet; treat it as an empty list.
+          && resource.data.get('followers', []) is list
+          && request.resource.data.get('followers', []) is list
+          && (
+            (request.resource.data.get('followers', []).size() == resource.data.get('followers', []).size() + 1
+              && request.resource.data.get('followers', []).hasAll(resource.data.get('followers', []))
+              && request.auth.uid in request.resource.data.get('followers', []))
+            ||
+            (request.resource.data.get('followers', []).size() == resource.data.get('followers', []).size() - 1
+              && resource.data.get('followers', []).hasAll(request.resource.data.get('followers', []))
+              && request.auth.uid in resource.data.get('followers', [])
+              && !(request.auth.uid in request.resource.data.get('followers', [])))
+          ));
       allow delete: if isOwner(uid);
     }
 
@@ -29,6 +46,28 @@ service cloud.firestore {
       }
     }
 
+
+    match /stories/{storyId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasAll(['uid','mediaURL','mediaType','expiresAt','createdAt']);
+      allow update, delete: if signedIn() && resource.data.uid == request.auth.uid;
+    }
+    match /reels/{reelId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasAll(['uid','videoURL','createdAt']);
+      allow update, delete: if signedIn() && resource.data.uid == request.auth.uid;
+    }
+    match /calls/{callId} {
+      allow read: if signedIn() && (resource.data.caller == request.auth.uid || resource.data.callee == request.auth.uid);
+      allow create: if signedIn() && request.resource.data.caller == request.auth.uid;
+      allow update: if signedIn() && (resource.data.caller == request.auth.uid || resource.data.callee == request.auth.uid);
+      allow delete: if false;
+      match /{candidateCollection}/{candidateId} {
+        allow read, create: if signedIn();
+      }
+    }
     match /chats/{chatId} {
       allow read: if signedIn() && request.auth.uid in resource.data.members;
       allow create: if signedIn() && request.auth.uid in request.resource.data.members;
