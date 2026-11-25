@@ -144,14 +144,56 @@ function startLiveData(){
  unsubStories=onSnapshot(query(collection(db,"stories"),orderBy("createdAt","desc"),limit(100)),snap=>renderStories(snap.docs.map(d=>({id:d.id,...d.data()}))),e=>console.error(e));
  unsubReels=onSnapshot(query(collection(db,"reels"),orderBy("createdAt","desc"),limit(50)),snap=>renderReels(snap.docs.map(d=>({id:d.id,...d.data()}))),e=>console.error(e));
 }
-function renderPost(id,p,container){const el=document.createElement("article");el.className="post";const name=p.displayName||"Member",photo=p.photoURL||"",liked=(p.likes||[]).includes(user.uid);el.innerHTML=`<div class="posthead"><div class="avatar">${avatarHTML(name,photo)}</div><div class="userline"><div class="username">${safeText(name)}</div><div class="handle">${p.createdAt?.toDate?p.createdAt.toDate().toLocaleString():"Recently"}</div></div><button class="follow-btn" data-profile="${safeText(p.uid)}">Profile</button></div><div class="postvisual">${p.imageURL?`<img src="${safeText(p.imageURL)}" alt="Post image">`:`<div class="artword">${safeText(p.caption||"SHARE YOUR MOMENT").slice(0,80)}</div>`}</div><div class="postactions"><button class="action ${liked?"liked":""}" data-like>♡</button><button class="action" data-comment>▢</button><button class="action" data-share>↗</button></div><div class="postbody"><b>${(p.likes||[]).length} likes</b><p class="caption"><b>${safeText(name)}</b>${safeText(p.caption||"")}</p><div class="commentline"><button data-comment>View or add comments</button></div><div class="comment-list" id="comments-${id}"></div></div>`;
+function renderPost(id,p,container){const el=document.createElement("article");el.className="post";const name=p.displayName||"Member",photo=p.photoURL||"",liked=(p.likes||[]).includes(user.uid);el.innerHTML=`<div class="posthead"><div class="avatar">${avatarHTML(name,photo)}</div><div class="userline"><div class="username">${safeText(name)}</div><div class="handle">${p.createdAt?.toDate?p.createdAt.toDate().toLocaleString():"Recently"}</div></div><button class="follow-btn" data-profile="${safeText(p.uid)}">Profile</button>${p.uid===user.uid?'<button class="follow-btn" data-delete-post>Delete</button>':""}</div><div class="postvisual">${p.imageURL?`<img src="${safeText(p.imageURL)}" alt="Post image">`:`<div class="artword">${safeText(p.caption||"SHARE YOUR MOMENT").slice(0,80)}</div>`}</div><div class="postactions"><button class="action ${liked?"liked":""}" data-like>♡</button><button class="action" data-comment>▢</button><button class="action" data-share>↗</button></div><div class="postbody"><b>${(p.likes||[]).length} likes</b><p class="caption"><b>${safeText(name)}</b>${safeText(p.caption||"")}</p><div class="commentline"><button data-view-comments>View comments</button> <button data-add-comment>Add comment</button></div><div class="comment-list" id="comments-${id}" hidden></div></div>`;
  el.querySelector("[data-profile]").onclick=()=>openUserProfile(allUsers.find(x=>x.uid===p.uid));
  el.querySelector("[data-like]").onclick=async()=>{try{await updateDoc(doc(db,"posts",id),{likes:liked?arrayRemove(user.uid):arrayUnion(user.uid)});}catch(e){toast("Like failed: "+e.message)}};
- el.querySelectorAll("[data-comment]").forEach(b=>b.onclick=()=>addComment(id,el.querySelector(".comment-list")));
+ el.querySelector("[data-view-comments]").onclick=()=>viewComments(id,el.querySelector(".comment-list"),el.querySelector("[data-view-comments]"));
+ el.querySelector("[data-add-comment]").onclick=()=>addComment(id,el.querySelector(".comment-list"));
+ const deleteBtn=el.querySelector("[data-delete-post]");
+ if(deleteBtn)deleteBtn.onclick=()=>deletePost(id,deleteBtn);
  el.querySelector("[data-share]").onclick=()=>{if(navigator.share)navigator.share({title:"Shivam Programing",url:location.href});else{navigator.clipboard?.writeText(location.href);toast("Link copied")}};
  container.append(el);
 }
-async function addComment(postId,container){const comment=prompt("Write your comment:");if(!comment?.trim())return;try{await addDoc(collection(db,"posts",postId,"comments"),{uid:user.uid,displayName:userData.displayName||user.email, text:comment.trim(),createdAt:serverTimestamp()});container.textContent="Comment added.";toast("Comment posted");}catch(e){toast("Comment failed: "+e.message)}}
+async function viewComments(postId,container,button){
+ const opening=container.hidden;container.hidden=!opening;
+ if(!opening){button.textContent="View comments";return;}
+ button.textContent="Hide comments";container.innerHTML='<div class="subtle">Loading comments…</div>';
+ try{
+  const snap=await getDocs(query(collection(db,"posts",postId,"comments"),orderBy("createdAt","asc")));
+  container.innerHTML="";
+  if(snap.empty){container.innerHTML='<div class="subtle">No comments yet.</div>';return;}
+  snap.forEach(d=>{
+   const c=d.data(),row=document.createElement("div");row.className="comment-item";
+   const author=document.createElement("b");author.textContent=(c.displayName||c.authorName||"Member")+": ";
+   const body=document.createElement("span");body.textContent=c.text||"";
+   row.append(author,body);container.append(row);
+  });
+ }catch(e){container.textContent="Could not load comments: "+e.message;toast("Comments could not load.");}
+}
+async function addComment(postId,container){
+ const comment=prompt("Write your comment:");if(!comment?.trim())return;
+ try{
+  await addDoc(collection(db,"posts",postId,"comments"),{uid:user.uid,displayName:userData.displayName||user.email,text:comment.trim(),createdAt:serverTimestamp()});
+  toast("Comment posted");
+  const button=container.parentElement.querySelector("[data-view-comments]");
+  if(container.hidden)container.hidden=false;
+  await viewComments(postId,container,button);
+ }catch(e){toast("Comment failed: "+e.message)}
+}
+async function deletePost(postId,button){
+ if(!confirm("Delete this post and all its comments? This cannot be undone."))return;
+ button.disabled=true;button.textContent="Deleting…";
+ try{
+  const commentsRef=collection(db,"posts",postId,"comments");
+  while(true){
+   const snap=await getDocs(query(commentsRef,limit(450)));
+   if(snap.empty)break;
+   const batch=writeBatch(db);snap.docs.forEach(d=>batch.delete(d.ref));await batch.commit();
+  }
+  await deleteDoc(doc(db,"posts",postId));
+  toast("Post and comments deleted.");
+ }catch(e){console.error(e);toast("Delete failed: "+e.message);button.disabled=false;button.textContent="Delete";}
+}
 function renderPeople(){const others=allUsers.filter(x=>x.uid!==user.uid);const makePerson=p=>{const el=document.createElement("div");el.className="suggest";const av=document.createElement("div");av.className="avatar";setAvatar(av,p.displayName,p.photoURL);const info=document.createElement("div");info.className="userline";info.innerHTML=`<b>${safeText(p.displayName||"Member")}</b><div class="handle">${safeText(p.email||"")}</div>`;const btn=document.createElement("button");btn.className="follow";btn.textContent=(userData.following||[]).includes(p.uid)?"Following":"Follow";btn.onclick=()=>toggleFollow(p.uid,btn);el.append(av,info,btn);el.onclick=e=>{if(e.target!==btn)openUserProfile(p)};return el};
  ["#suggestions","#exploreUsers","#peopleList"].forEach((s,i)=>{const box=$(s);if(!box)return;box.innerHTML="";const list=i===0?others.slice(0,5):others;if(!list.length){box.innerHTML='<div class="empty">No other members yet.</div>';return;}list.forEach(p=>box.append(makePerson(p)))});
 }
