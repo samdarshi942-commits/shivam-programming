@@ -31,7 +31,7 @@ service cloud.firestore {
     match /posts/{postId} {
       allow read: if signedIn();
       allow create: if signedIn() && request.resource.data.uid == request.auth.uid
-        && request.resource.data.keys().hasAll(['uid','authorName','caption','likes','createdAt']);
+        && request.resource.data.keys().hasAll(['uid','displayName','caption','likes','createdAt']);
       allow update: if signedIn() && (
         resource.data.uid == request.auth.uid ||
         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes'])
@@ -41,8 +41,10 @@ service cloud.firestore {
       match /comments/{commentId} {
         allow read: if signedIn();
         allow create: if signedIn() && request.resource.data.uid == request.auth.uid
-          && request.resource.data.keys().hasAll(['uid','authorName','text','createdAt']);
-        allow update, delete: if signedIn() && resource.data.uid == request.auth.uid;
+          && request.resource.data.keys().hasAll(['uid','displayName','text','createdAt']);
+        allow update: if signedIn() && resource.data.uid == request.auth.uid;
+        allow delete: if signedIn() && (resource.data.uid == request.auth.uid
+          || get(/databases/$(database)/documents/posts/$(postId)).data.uid == request.auth.uid);
       }
     }
 
