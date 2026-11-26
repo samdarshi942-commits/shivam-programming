@@ -89,8 +89,11 @@ service cloud.firestore {
         allow create: if signedIn()
           && request.resource.data.uid == request.auth.uid
           && request.resource.data.keys().hasAll(['uid','displayName','text','createdAt']);
-        allow update, delete: if signedIn()
+        allow update: if signedIn()
           && resource.data.uid == request.auth.uid;
+        allow delete: if signedIn()
+          && (resource.data.uid == request.auth.uid
+            || get(/databases/$(database)/documents/reels/$(reelId)).data.uid == request.auth.uid);
       }
     }
 
