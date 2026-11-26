@@ -10,7 +10,12 @@ service cloud.firestore {
       allow list: if false;
       allow create: if signedIn() && request.resource.data.uid == request.auth.uid
         && request.resource.data.loginEmail is string;
-      allow update, delete: if false;
+      // Only the owner of a username mapping can update or remove it.
+      allow update: if signedIn()
+        && resource.data.uid == request.auth.uid
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.loginEmail is string;
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
     }
 
     // Private account data, including email addresses: owner only.
