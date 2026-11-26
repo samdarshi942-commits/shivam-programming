@@ -251,7 +251,7 @@ $("#searchInput").oninput=e=>{const q=e.target.value.toLowerCase();if(!q)return;
  // Messages: open a conversation with a selected person.
 function chatId(a,b){return [a,b].sort().join("_")}
 
-function selectChat(person){
+async function selectChat(person){
  if(!person?.uid)return;
  activeChatUser=person;
  const head=$("#chatHead");
@@ -270,6 +270,17 @@ function selectChat(person){
  $("#chatText").disabled=false;$("#sendBtn").disabled=false;
  if(unsubMessages)unsubMessages();
  const id=chatId(user.uid,person.uid);
+ try{
+  // Create the parent chat before listening to its messages.
+  await setDoc(doc(db,"chats",id),{
+   members:[user.uid,person.uid].sort(),
+   updatedAt:serverTimestamp()
+  },{merge:true});
+ }catch(e){
+  console.error(e);
+  toast("Chat could not open: "+e.message);
+  return;
+ }
  const q=query(collection(db,"chats",id,"messages"),orderBy("createdAt","asc"),limit(100));
  unsubMessages=onSnapshot(q,s=>{
   const box=$("#messages");box.innerHTML="";
@@ -290,17 +301,11 @@ $("#chatForm").onsubmit=async e=>{
  const chatRef=doc(db,"chats",id);
  $("#chatText").value="";
  try{
-  const snap=await getDoc(chatRef);
-  if(!snap.exists()){
-   await setDoc(chatRef,{
-    members:[user.uid,activeChatUser.uid].sort(),
-    lastMessage:message,updatedAt:serverTimestamp()
-   });
-  }else{
-   await updateDoc(chatRef,{
-    lastMessage:message,updatedAt:serverTimestamp()
-   });
-  }
+  await setDoc(chatRef,{
+   members:[user.uid,activeChatUser.uid].sort(),
+   lastMessage:message,
+   updatedAt:serverTimestamp()
+  },{merge:true});
   await addDoc(collection(db,"chats",id,"messages"),{
    senderId:user.uid,receiverId:activeChatUser.uid,
    text:message,createdAt:serverTimestamp()
