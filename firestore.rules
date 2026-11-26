@@ -4,6 +4,15 @@ service cloud.firestore {
     function signedIn() { return request.auth != null; }
     function isOwner(uid) { return signedIn() && request.auth.uid == uid; }
 
+    // Username lookup is readable before login; usernames are public identifiers.
+    match /usernames/{username} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid
+        && request.resource.data.loginEmail is string;
+      allow update, delete: if false;
+    }
+
     // Private account data, including email addresses: owner only.
     match /users/{uid} {
       allow read, create, update, delete: if isOwner(uid);
