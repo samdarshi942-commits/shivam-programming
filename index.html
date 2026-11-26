@@ -48,7 +48,7 @@
  </main>
  <aside class="rightcol"><div class="profilemini"><div class="avatar" id="sideAvatar">?</div><div class="userline"><b id="sideName">Your account</b><div class="handle" id="sideEmail"></div></div></div><div class="sectionhead"><b>People you may know</b></div><div id="suggestions"></div><div class="trending"><b>Trending for you</b><div class="trend"><small>CREATORS · COMMUNITY</small><b>#ShivamPrograming</b><small>Share what you create</small></div><div class="trend"><small>COMMUNITY</small><b>#CreateEveryDay</b><small>Make something today</small></div></div></aside>
 </div>
-<div class="bottomnav"><button class="active" data-page="home">⌂</button><button data-page="explore">⌕</button><button id="mobileCreate">＋</button><button data-page="messages">✉</button><button data-page="profile">◎</button></div>
+<div class="bottomnav"><button class="active" data-page="home">⌂</button><button data-page="explore">⌕</button><button data-page="reels" aria-label="Reels">▷</button><button id="mobileCreate">＋</button><button data-page="messages">✉</button><button data-page="profile">◎</button></div>
 <div class="overlay" id="createModal"><div class="modal"><div class="modalhead"><h3>Create a post</h3><button class="close" data-close>×</button></div><label class="subtle">CAPTION</label><textarea class="field" id="postCaption" rows="4" placeholder="What would you like to share?"></textarea><label class="subtle">PHOTO (OPTIONAL)</label><input class="field" id="postImage" type="file" accept="image/*"><div class="subtle">Photos and videos are uploaded securely to Cloudinary.</div><button class="primary" id="publishBtn">Share with everyone</button></div></div>
 <div class="overlay" id="peopleModal"><div class="modal"><div class="modalhead"><h3 id="peopleModalTitle">Followers</h3><button class="close" data-close>×</button></div><div id="peopleModalList"></div></div></div>
 <div class="overlay" id="editModal"><div class="modal"><div class="modalhead"><h3>Edit profile</h3><button class="close" data-close>×</button></div><label class="subtle">USERNAME (3–20: a-z, 0-9, _ or .)</label><input class="field" id="editUsername" maxlength="20" placeholder="your_username"><label class="subtle">DISPLAY NAME</label><input class="field" id="displayName"><label class="subtle">BIO</label><textarea class="field" id="bioText" rows="3"></textarea><button class="primary" id="saveProfile">Save changes</button></div></div>
@@ -229,14 +229,29 @@ function viewStory(s){const media=s.mediaType==="video"?`<video class="story-med
 $("#addStoryBtn").onclick=()=>openModal("storyModal");
 $("#publishStoryBtn").onclick=async()=>{const f=$("#storyFile").files[0],btn=$("#publishStoryBtn");if(!f)return toast("Choose a photo or video.");if(f.size>50*1024*1024)return toast("Story must be under 50 MB.");btn.disabled=true;try{const url=await uploadFileWithProgress("stories/"+user.uid+"/"+Date.now(),f,btn,"Saving story…");await addDoc(collection(db,"stories"),{uid:user.uid,displayName:userData.displayName,photoURL:userData.photoURL||"",mediaURL:url,mediaType:f.type.startsWith("video")?"video":"image",createdAt:serverTimestamp(),expiresAt:new Date(Date.now()+24*60*60*1000)});$("#storyFile").value="";closeModals();toast("Story shared!")}catch(e){toast("Story upload failed: "+e.message)}finally{btn.disabled=false;btn.textContent="Share story"}};
 $("#publishBtn").onclick=async()=>{const f=$("#postImage").files[0],caption=$("#postCaption").value.trim(),btn=$("#publishBtn");if(!caption&&!f)return toast("Write a caption or choose a photo.");if(f&&f.size>8*1024*1024)return toast("Photo must be under 8 MB.");btn.disabled=true;try{let imageURL="";if(f){imageURL=await uploadFileWithProgress("posts/"+user.uid+"/"+Date.now(),f,btn,"Saving post…")}await addDoc(collection(db,"posts"),{uid:user.uid,displayName:userData.displayName||"Member",photoURL:userData.photoURL||"",caption,imageURL,likes:[],createdAt:serverTimestamp()});$("#postCaption").value="";$("#postImage").value="";closeModals();toast("Post shared!")}catch(e){toast("Post failed: "+e.message)}finally{btn.disabled=false;btn.textContent="Share with everyone"}};
+async function deleteReel(reelId,button){
+ if(!confirm("Delete this Reel and all its comments? This cannot be undone."))return;
+ button.disabled=true;button.textContent="Deleting…";
+ try{
+  const commentsRef=collection(db,"reels",reelId,"comments");
+  while(true){
+   const snap=await getDocs(query(commentsRef,limit(450)));
+   if(snap.empty)break;
+   const batch=writeBatch(db);snap.docs.forEach(d=>batch.delete(d.ref));await batch.commit();
+  }
+  await deleteDoc(doc(db,"reels",reelId));
+  toast("Reel and comments deleted.");
+ }catch(e){console.error(e);toast("Reel delete failed: "+e.message);button.disabled=false;button.textContent="🗑 Delete";}
+}
 function renderReels(reels){
  const box=$("#reelsFeed");box.innerHTML="";
  if(!reels.length){box.innerHTML='<div class="empty">No reels yet. Upload the first one!</div>';return;}
  reels.forEach(r=>{
   const likes=Array.isArray(r.likes)?r.likes:[];const liked=likes.includes(user.uid);
   const el=document.createElement("article");el.className="post";
-  el.innerHTML='<div class="posthead"><div class="avatar"></div><div class="userline"><b>'+safeText(r.displayName||"Member")+'</b><div class="handle">Reel</div></div></div><div style="padding:12px"><video class="reel-video" src="'+safeText(r.videoURL)+'" controls playsinline></video><p>'+safeText(r.caption||"")+'</p><div class="reel-actions"><button data-reel-like>♥ <span>'+likes.length+'</span></button><button data-reel-share>↗ Share</button><button data-reel-comments>▢ Comments</button></div><div class="reel-comments" hidden></div><form class="reel-comment-box"><input placeholder="Write a comment…" maxlength="500"><button class="follow-btn" type="submit">Send</button></form></div>';
+  el.innerHTML='<div class="posthead"><div class="avatar"></div><div class="userline"><b>'+safeText(r.displayName||"Member")+'</b><div class="handle">Reel</div></div></div><div style="padding:12px"><video class="reel-video" src="'+safeText(r.videoURL)+'" controls playsinline></video><p>'+safeText(r.caption||"")+'</p><div class="reel-actions"><button data-reel-like>♥ <span>'+likes.length+'</span></button><button data-reel-share>↗ Share</button><button data-reel-comments>▢ Comments</button>'+(r.uid===user.uid?'<button data-reel-delete>🗑 Delete</button>':'')+'</div><div class="reel-comments" hidden></div><form class="reel-comment-box"><input placeholder="Write a comment…" maxlength="500"><button class="follow-btn" type="submit">Send</button></form></div>';
   const av=el.querySelector(".avatar");setAvatar(av,r.displayName,r.photoURL);
+  const deleteBtn=el.querySelector("[data-reel-delete]");if(deleteBtn)deleteBtn.onclick=()=>deleteReel(r.id,deleteBtn);
   const likeBtn=el.querySelector("[data-reel-like]");if(liked)likeBtn.classList.add("liked");
   likeBtn.onclick=async()=>{try{await updateDoc(doc(db,"reels",r.id),{likes:liked?arrayRemove(user.uid):arrayUnion(user.uid)});}catch(e){toast("Reel like failed: "+e.message)}};
   el.querySelector("[data-reel-share]").onclick=()=>{const url=location.href.split("#")[0]+"#reel-"+r.id;if(navigator.share)navigator.share({title:"Shivam Programing Reel",url}).catch(()=>{});else{navigator.clipboard?.writeText(url);toast("Reel link copied")}};
