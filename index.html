@@ -46,7 +46,7 @@
   <section id="page-messages" hidden><div class="sectionhead"><h2>Messages</h2><span class="subtle">Live conversations</span></div><div class="chatlayout"><div class="chatlist"><div class="subtle" style="padding:5px 6px 12px">PEOPLE</div><div id="peopleList"><div class="empty">Loading users…</div></div></div><div class="chatwindow"><div class="chathead" id="chatHead"><div class="avatar">?</div><div><b>Select a person</b><div class="subtle">Choose so
    meone to start chatting</div></div></div><div class="messages" id="messages"><div class="empty">Your messages will appear here.</div></div><form class="chatinput" id="chatForm"><input id="chatText" placeholder="Write a message..." autocomplete="off" disabled><button id="sendBtn" disabled>Send</button></form></div></div></section>
   <section id="page-explore" hidden><div class="sectionhead"><h2>Explore people</h2><span class="subtle">Find your community</span></div><div id="exploreUsers"></div></section>
-  <section id="page-userprofile" hidden><div class="profilepage"><div class="sectionhead"><button class="secondary" id="backFromUserProfile" style="width:auto;margin:0">← Back</button><span class="subtle">Member profile</span></div><div class="profilehero"><div class="avatar" id="otherAvatar">?</div><div style="flex:1"><h2 style="margin:0 0 3px" id="otherName">Member</h2><div class="subtle" id="otherEmail"></div><div class="stats"><div><b id="otherPostCount">0</b><span class="subtle"> posts</span></div><div><b id="otherFollowerCount">0</b><span class="subtle"> followers</span></div><div><b id="otherFollowingCount">0</b><span class="subtle"> following</span></div></div></div><div class="profile-actions"><button id="otherMessageBtn">✉ Message</button><button id="otherFollowBtn">Follow</button></div></div><p id="otherBio"></p><div class="sectionhead"><h2>Posts & Reels</h2></div><div class="profilegrid" id="otherProfileGrid"></div></div></section>
+  <section id="page-userprofile" hidden><div class="profilepage"><div class="sectionhead"><button class="secondary" id="backFromUserProfile" style="width:auto;margin:0">← Back</button><span class="subtle">Member profile</span></div><div class="profilehero"><div class="avatar" id="otherAvatar">?</div><div style="flex:1"><h2 style="margin:0 0 3px" id="otherName">Member</h2><div class="subtle" id="otherEmail"></div><div class="stats"><div><b id="otherPostCount">0</b><span class="subtle"> posts</span></div><div><b id="otherFollowerCount">0</b><button type="button" class="subtle stat-link" id="otherShowFollowers">followers</button></div><div><b id="otherFollowingCount">0</b><button type="button" class="subtle stat-link" id="otherShowFollowing">following</button></div></div></div><div class="profile-actions"><button id="otherMessageBtn">✉ Message</button><button id="otherFollowBtn">Follow</button></div></div><p id="otherBio"></p><div class="sectionhead"><h2>Posts & Reels</h2></div><div class="profilegrid" id="otherProfileGrid"></div></div></section>
   <section id="page-profile" hidden><div class="profilepage"><div class="profilehero"><div class="avatar" id="profileAvatar">?</div><div style="flex:1"><h2 style="margin:0 0 3px" id="profileName">Your profile</h2><div class="subtle" id="profileEmail"></div><div class="stats"><div><b id="postCount">0</b><span class="subtle"> posts</span></div><div><b id="followerCount">0</b><button type="button" class="subtle stat-link" id="showFollowers">followers</button></div><div><b id="followingCount">0</b><button type="button" class="subtle stat-link" id="showFollowing">following</button></div></div></div><div class="profile-actions"><label class="dp-upload">📷 Change photo<input id="dpFile" type="file" accept="image/*" hidden></label><button id="editProfile">Edit profile</button></div></div><p id="profileBio">Welcome to Shivam Programing ✨</p><div class="profilegrid" id="profileGrid"></div></div></section>
  </main>
  <aside class="rightcol"><div class="profilemini"><div class="avatar" id="sideAvatar">?</div><div class="userline"><b id="sideName">Your account</b><div class="handle" id="sideEmail"></div></div></div><div class="sectionhead"><b>People you may know</b></div><div id="suggestions"></div><div class="trending"><b>Trending for you</b><div class="trend"><small>CREATORS · COMMUNITY</small><b>#ShivamPrograming</b><small>Share what you create</small></div><div class="trend"><small>COMMUNITY</small><b>#CreateEveryDay</b><small>Make something today</small></div></div></aside>
@@ -130,7 +130,7 @@ async function openUserProfile(person){
  viewingProfile=profile;go("userprofile");
  setAvatar($("#otherAvatar"),profile.displayName,profile.photoURL);
  $("#otherName").textContent=profile.displayName||"Member";$("#otherEmail").textContent="";$("#otherBio").textContent=profile.bio||"";
- $("#otherFollowerCount").textContent=(profile.followers||[]).length;$("#otherFollowingCount").textContent=(profile.following||[]).length;
+ $("#otherFollowerCount").textContent=(profile.followers||[]).length;$("#otherFollowingCount").textContent=(profile.following||[]).length;$("#otherShowFollowers").onclick=()=>showPeopleList("followers",profile);$("#otherShowFollowing").onclick=()=>showPeopleList("following",profile);
  const followBtn=$("#otherFollowBtn"),following=(userData.following||[]).includes(profile.uid);followBtn.textContent=following?"Following":"Follow";followBtn.classList.toggle("following",following);
  followBtn.onclick=()=>toggleFollow(profile.uid,followBtn);
  $("#otherMessageBtn").onclick=()=>{go("messages");selectChat(profile);};
@@ -335,27 +335,32 @@ $("#chatForm").onsubmit=async e=>{
  }
 };
 
-// Followers and following lists.
-async function showPeopleList(type){
- const ids=userData[type]||[];
- $("#peopleModalTitle").textContent=type==="followers"?"Followers":"Following";
+// Followers and following lists for the currently signed-in user or any viewed profile.
+async function showPeopleList(type, profile=userData){
+ const ids=Array.isArray(profile?.[type])?profile[type]:[];
+ const profileName=profile?.displayName||"Member";
+ $("#peopleModalTitle").textContent=type==="followers"?profileName+"'s Followers":profileName+" is Following";
  const box=$("#peopleModalList");box.innerHTML="";
- if(!ids.length){box.innerHTML='<div class="empty">No users found.</div>';openModal("peopleModal");return;}
- ids.forEach(uid=>{
-  const p=allUsers.find(x=>x.uid===uid);
-  if(!p)return;
+ if(!ids.length){box.innerHTML='<div class="empty">'+(type==="followers"?"No followers yet.":"Not following anyone yet.")+'</div>';openModal("peopleModal");return;}
+ const listed=ids.map(uid=>allUsers.find(x=>x.uid===uid)).filter(Boolean);
+ if(!listed.length){box.innerHTML='<div class="empty">Member profiles could not be loaded. Please try again.</div>';openModal("peopleModal");return;}
+ listed.forEach(p=>{
   const row=document.createElement("div");row.className="suggest";
   const av=document.createElement("div");av.className="avatar";
   setAvatar(av,p.displayName,p.photoURL);
+  const info=document.createElement("div");info.className="userline";
   const name=document.createElement("b");name.textContent=p.displayName||"Member";
-  const open=document.createElement("button");open.className="follow";open.textContent="Profile";
+  const relation=document.createElement("div");relation.className="handle";
+  relation.textContent=type==="followers"?"Follows "+profileName:profileName+" follows";
+  info.append(name,relation);
+  const open=document.createElement("button");open.className="follow";open.textContent="View profile";
   open.onclick=()=>{closeModals();openUserProfile(p)};
-  row.append(av,name,open);box.append(row);
+  row.append(av,info,open);box.append(row);
  });
  openModal("peopleModal");
 }
-$("#showFollowers").onclick=()=>showPeopleList("followers");
-$("#showFollowing").onclick=()=>showPeopleList("following");
+$("#showFollowers").onclick=()=>showPeopleList("followers",userData);
+$("#showFollowing").onclick=()=>showPeopleList("following",userData);
 
 // Voice calling using WebRTC.
 async function startVoiceCall(){
