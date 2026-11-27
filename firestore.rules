@@ -22,12 +22,29 @@ service cloud.firestore {
     match /users/{uid} {
       allow read, create, update, delete: if isOwner(uid);
       match /notifications/{notificationId} {
+        // A user can read or delete only notifications in their own inbox.
         allow read, delete: if isOwner(uid);
+        // Signed-in users may create a notification for another user only
+        // when they are the actor; clients cannot create notifications as someone else.
         allow create: if signedIn()
-          && request.resource.data.actorUid == request.auth.uid
+          && request.resource.data.keys().hasAll([
+            'recipientUid','actorUid','actorName','type','text',
+            'sourceId','sourceType','read','createdAt'
+          ])
           && request.resource.data.recipientUid == uid
-          && request.resource.data.keys().hasAll(['recipientUid','actorUid','actorName','type','text','sourceId','sourceType','read','createdAt'])
-          && request.resource.data.read == false;
+          && request.resource.data.actorUid == request.auth.uid
+          && request.resource.data.actorUid != uid
+          && request.resource.data.actorName is string
+          && request.resource.data.actorName.size() <= 80
+          && request.resource.data.type in ['like','comment','message']
+          && request.resource.data.sourceType in ['post','story','reel','message']
+          && request.resource.data.text is string
+          && request.resource.data.text.size() <= 500
+          && request.resource.data.sourceId is string
+          && request.resource.data.sourceId.size() <= 200
+          && request.resource.data.read == false
+          && request.resource.data.createdAt is timestamp;
+        // Recipient may only change the read flag.
         allow update: if isOwner(uid)
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read'])
           && request.resource.data.read is bool;
