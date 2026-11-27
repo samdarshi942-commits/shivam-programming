@@ -232,18 +232,25 @@ function renderStories(stories){
  latestByUser.forEach((s,uid)=>{if(uid===user.uid)return;const p=allUsers.find(x=>x.uid===uid)||{};const b=document.createElement("button");b.className="story";b.innerHTML='<div class="story-ring"><div class="avatar">'+avatarHTML(p.displayName||s.displayName,p.photoURL||s.photoURL)+'</div></div>'+safeText(p.displayName||s.displayName||"Member");b.onclick=()=>viewStory(s);bar.append(b);});
 }
 async function deleteStory(storyId,button){
- if(!confirm("Delete your story and its comments? This cannot be undone."))return;
+ if(!confirm("Delete your story? This cannot be undone."))return;
  button.disabled=true;button.textContent="Deleting…";
  try{
-  const commentsRef=collection(db,"stories",storyId,"comments");
-  while(true){
-   const snap=await getDocs(query(commentsRef,limit(400)));
-   if(snap.empty)break;
-   const batch=writeBatch(db);snap.docs.forEach(d=>batch.delete(d.ref));await batch.commit();
-  }
-  await deleteDoc(doc(db,"stories",storyId));
-  closeModals();toast("Story deleted.");
- }catch(e){console.error("Story delete:",e);toast("Story delete failed: "+e.message);button.disabled=false;button.textContent="Delete story";}
+  // Delete the parent story directly. Firestore rules currently authorize the
+  // story owner on /stories/{storyId}; querying its subcollection first can
+  // fail when no nested-comments rule has been deployed.
+  const storyRef=doc(db,"stories",storyId);
+  const snap=await getDoc(storyRef);
+  if(!snap.exists())throw new Error("Story already deleted or no longer exists.");
+  if(snap.data().uid!==user.uid)throw new Error("You can delete only your own story.");
+  await deleteDoc(storyRef);
+  $("#storyViewerContent").innerHTML="";
+  closeModals();
+  toast("Story deleted successfully.");
+ }catch(e){
+  console.error("Story delete:",e);
+  toast("Story delete failed: "+(e.code?e.code+" — ":"")+e.message);
+  button.disabled=false;button.textContent="🗑 Delete story";
+ }
 }
 async function loadStoryComments(storyId,container){
  container.innerHTML='<div class="subtle">Loading comments…</div>';
