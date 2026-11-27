@@ -335,32 +335,57 @@ $("#chatForm").onsubmit=async e=>{
  }
 };
 
-// Followers and following lists for the currently signed-in user or any viewed profile.
+// Followers and following lists for own and other users' profiles.
 async function showPeopleList(type, profile=userData){
- const ids=Array.isArray(profile?.[type])?profile[type]:[];
- const profileName=profile?.displayName||"Member";
- $("#peopleModalTitle").textContent=type==="followers"?profileName+"'s Followers":profileName+" is Following";
- const box=$("#peopleModalList");box.innerHTML="";
- if(!ids.length){box.innerHTML='<div class="empty">'+(type==="followers"?"No followers yet.":"Not following anyone yet.")+'</div>';openModal("peopleModal");return;}
- const listed=ids.map(uid=>allUsers.find(x=>x.uid===uid)).filter(Boolean);
- if(!listed.length){box.innerHTML='<div class="empty">Member profiles could not be loaded. Please try again.</div>';openModal("peopleModal");return;}
- listed.forEach(p=>{
-  const row=document.createElement("div");row.className="suggest";
-  const av=document.createElement("div");av.className="avatar";
-  setAvatar(av,p.displayName,p.photoURL);
-  const info=document.createElement("div");info.className="userline";
-  const name=document.createElement("b");name.textContent=p.displayName||"Member";
-  const relation=document.createElement("div");relation.className="handle";
-  relation.textContent=type==="followers"?"Follows "+profileName:profileName+" follows";
-  info.append(name,relation);
-  const open=document.createElement("button");open.className="follow";open.textContent="View profile";
-  open.onclick=()=>{closeModals();openUserProfile(p)};
-  row.append(av,info,open);box.append(row);
- });
+ const target=profile||userData;
+ if(!target.uid){toast("Profile details are not available.");return;}
+ const box=$("#peopleModalList");
+ $("#peopleModalTitle").textContent=(target.displayName||"Member")+(type==="followers"?"'s Followers":" is Following");
+ box.innerHTML='<div class="empty">Loading people…</div>';
  openModal("peopleModal");
+ try{
+  // Read the latest public profile so another user's relationship arrays are never stale.
+  const freshSnap=await getDoc(doc(db,"publicProfiles",target.uid));
+  const fresh=freshSnap.exists()?{uid:target.uid,...freshSnap.data()}:target;
+  const ids=Array.isArray(fresh[type])?fresh[type]:[];
+  box.innerHTML="";
+  if(!ids.length){
+   box.innerHTML='<div class="empty">'+(type==="followers"?"No followers yet.":"Not following anyone yet.")+'</div>';
+   return;
+  }
+  const people=await Promise.all(ids.map(async uid=>{
+   const cached=allUsers.find(x=>x.uid===uid);
+   if(cached)return cached;
+   const snap=await getDoc(doc(db,"publicProfiles",uid));
+   return snap.exists()?{uid,...snap.data()}:null;
+  }));
+  const listed=people.filter(Boolean);
+  if(!listed.length){
+   box.innerHTML='<div class="empty">Could not load these member profiles.</div>';
+   return;
+  }
+  listed.forEach(p=>{
+   const row=document.createElement("div");row.className="suggest";
+   const av=document.createElement("div");av.className="avatar";
+   setAvatar(av,p.displayName,p.photoURL);
+   const info=document.createElement("div");info.className="userline";
+   const name=document.createElement("b");name.textContent=p.displayName||"Member";
+   const relation=document.createElement("div");relation.className="handle";
+   relation.textContent=type==="followers"?"Follows "+(fresh.displayName||"this member"):(fresh.displayName||"This member")+" follows";
+   info.append(name,relation);
+   const open=document.createElement("button");open.className="follow";open.textContent="View profile";
+   open.onclick=()=>{closeModals();openUserProfile(p)};
+   row.append(av,info,open);box.append(row);
+  });
+ }catch(e){
+  console.error("Could not load follower/following list:",e);
+  box.innerHTML='<div class="empty">Could not load list: '+safeText(e.message||"Please try again.")+'</div>';
+ }
 }
 $("#showFollowers").onclick=()=>showPeopleList("followers",userData);
 $("#showFollowing").onclick=()=>showPeopleList("following",userData);
+$("#otherShowFollowers").onclick=()=>showPeopleList("followers",viewingProfile);
+$("#otherShowFollowing").onclick=()=>showPeopleList("following",viewingProfile);
 
 // Voice calling using WebRTC.
 async function startVoiceCall(){
