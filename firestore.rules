@@ -21,6 +21,17 @@ service cloud.firestore {
     // Private account data, including email addresses: owner only.
     match /users/{uid} {
       allow read, create, update, delete: if isOwner(uid);
+      match /notifications/{notificationId} {
+        allow read, delete: if isOwner(uid);
+        allow create: if signedIn()
+          && request.resource.data.actorUid == request.auth.uid
+          && request.resource.data.recipientUid == uid
+          && request.resource.data.keys().hasAll(['recipientUid','actorUid','actorName','type','text','sourceId','sourceType','read','createdAt'])
+          && request.resource.data.read == false;
+        allow update: if isOwner(uid)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read'])
+          && request.resource.data.read is bool;
+      }
     }
 
     // Public profile data contains no email address.
