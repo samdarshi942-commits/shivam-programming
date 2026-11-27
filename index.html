@@ -115,7 +115,16 @@ function setAvatar(el,name,photo){if(el){el.innerHTML="";if(photo){const im=docu
 function go(page){$$("main section").forEach(s=>s.hidden=s.id!=="page-"+page);$$("[data-page]").forEach(b=>b.classList.toggle("active",b.dataset.page===page));window.scrollTo({top:0,behavior:"smooth"})}
 $$("[data-page]").forEach(b=>b.addEventListener("click",()=>{go(b.dataset.page);if(b.dataset.page==="profile")loadOwnProfileGrid();}));
 function openModal(id){$("#"+id).classList.add("show")}function closeModals(){stopStoryMusicPreview();const storyPlayer=$("#storyMusicPlayer");if(storyPlayer){storyPlayer.pause();storyPlayer.currentTime=0;}$(".overlay").forEach(x=>x.classList.remove("show"))}
-$$("[data-close]").forEach(b=>b.onclick=closeModals);$$(".overlay").forEach(o=>o.addEventListener("click",e=>{if(e.target===o)closeModals()}));
+// One delegated close handler keeps every modal's X/Cancel control working,
+ // including controls rendered later by dynamic UI.
+document.addEventListener("click",e=>{
+ const closeButton=e.target.closest("[data-close],[data-cancel]");
+ if(closeButton){e.preventDefault();e.stopPropagation();closeModals();return;}
+ const overlay=e.target.closest(".overlay");
+ if(overlay&&e.target===overlay)closeModals();
+},true);
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&$(".overlay.show").length)closeModals();});
+$("[data-close],[data-cancel]").forEach(b=>{if(b.tagName==="BUTTON")b.type="button";});
 $("#newPostBtn").onclick=$("#mobileCreate").onclick=()=>openModal("createModal");
 function showAuthError(e){$("#authError").textContent=e?.message?.replace("Firebase: ","")||"Something went wrong."}
 $("#toggleAuth").onclick=()=>{authMode=authMode==="login"?"signup":"login";$("#authName").classList.toggle("hidden",authMode!=="signup");$("#emailAuthBtn").textContent=authMode==="login"?"Sign in":"Create account";$("#authModeText").textContent=authMode==="login"?"New here?":"Already have an account?";$("#toggleAuth").textContent=authMode==="login"?"Create an account":"Sign in";$("#authError").textContent=""};
