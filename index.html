@@ -245,26 +245,38 @@ async function searchStoryMusic(){
  try{
   const url=new URL("https://api.jamendo.com/v3.0/tracks/");
   url.searchParams.set("client_id",JAMENDO_CLIENT_ID);url.searchParams.set("format","json");
-  url.searchParams.set("search",q);url.searchParams.set("limit","12");url.searchParams.set("audioformat","mp32");url.searchParams.set("type","single albumtrack");
+  url.searchParams.set("search",q);url.searchParams.set("limit","12");url.searchParams.set("audioformat","mp32");
+  url.searchParams.set("type","single albumtrack");
   const response=await fetch(url.toString());if(!response.ok)throw new Error("Music service returned "+response.status);
   const data=await response.json();if(data.headers?.status!=="success")throw new Error(data.headers?.error_message||"Music search failed.");
   box.innerHTML="";
   if(!data.results?.length){box.innerHTML='<div class="empty">No songs found. Try another search.</div>';return;}
   data.results.forEach(track=>{
-   if(!track.audio)return;
+   const streamURL=track.audio||("https://api.jamendo.com/v3.0/tracks/file/?client_id="+encodeURIComponent(JAMENDO_CLIENT_ID)+"&id="+encodeURIComponent(track.id)+"&action=stream&audioformat=mp32");
+   if(!track.id||!streamURL)return;
    const row=document.createElement("div");row.className="story-track";
    const cover=document.createElement("img");cover.src=track.image||track.album_image||"";cover.alt="";
    const info=document.createElement("div");info.className="track-info";
    const title=document.createElement("b");title.textContent=track.name||"Untitled";
    const artist=document.createElement("small");artist.className="subtle";artist.textContent=track.artist_name||"Unknown artist";
    info.append(title,artist);
-   const preview=document.createElement("button");preview.type="button";preview.textContent="Preview";
-   preview.onclick=()=>{let a=document.getElementById("jamendoPreview");if(!a){a=document.createElement("audio");a.id="jamendoPreview";a.hidden=true;document.body.append(a)}a.src=track.audio;a.currentTime=0;a.play().catch(()=>toast("Tap preview again to play."));};
-   const choose=document.createElement("button");choose.type="button";choose.textContent="Use song";
-   choose.onclick=()=>{selectedStorySong={id:String(track.id),name:track.name||"Untitled",artist:track.artist_name||"",url:track.audio,image:track.image||track.album_image||""};$("#storyMusicSelected").textContent="Selected: "+selectedStorySong.name+" — "+selectedStorySong.artist;box.querySelectorAll(".story-track").forEach(x=>x.style.borderColor="var(--line)");row.style.borderColor="var(--accent)";};
+   const preview=document.createElement("button");preview.type="button";preview.textContent="▶ Play";
+   preview.onclick=async()=>{
+    let a=document.getElementById("jamendoPreview");
+    if(!a){a=document.createElement("audio");a.id="jamendoPreview";a.controls=true;a.preload="none";a.style.cssText="display:block;width:100%;margin:8px 0";box.append(a);}
+    try{if(a.src!==streamURL){a.pause();a.src=streamURL;}a.currentTime=0;await a.play();preview.textContent="▶ Playing";a.onended=()=>preview.textContent="▶ Play";}
+    catch(err){console.error("Jamendo preview playback:",err);toast("Song play nahi hua. Track unavailable ho sakta hai; doosra song try karo.");}
+   };
+   const choose=document.createElement("button");choose.type="button";choose.textContent="Select song";
+   choose.onclick=()=>{
+    selectedStorySong={id:String(track.id),name:track.name||"Untitled",artist:track.artist_name||"",url:streamURL,image:track.image||track.album_image||""};
+    $("#storyMusicSelected").textContent="✓ Selected: "+selectedStorySong.name+" — "+selectedStorySong.artist;
+    box.querySelectorAll(".story-track").forEach(x=>{x.style.borderColor="var(--line)";});
+    row.style.borderColor="var(--accent)";choose.textContent="✓ Selected";
+   };
    row.append(cover,info,preview,choose);box.append(row);
   });
-  if(!box.children.length)box.innerHTML='<div class="empty">No playable tracks found.</div>';
+  if(!box.children.length)box.innerHTML='<div class="empty">No tracks found.</div>';
  }catch(e){console.error("Jamendo search:",e);box.innerHTML='<div class="empty">Music search failed: '+safeText(e.message||"Try again.")+'</div>'}
  finally{btn.disabled=false}
 }
