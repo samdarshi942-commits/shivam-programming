@@ -114,7 +114,7 @@ function avatarHTML(name,photo){return photo?`<img src="${photo}" alt="">`:safeT
 function setAvatar(el,name,photo){if(el){el.innerHTML="";if(photo){const im=document.createElement("img");im.src=photo;im.alt="";el.append(im)}else el.textContent=(name||"?").trim().slice(0,1).toUpperCase()}}
 function go(page){$$("main section").forEach(s=>s.hidden=s.id!=="page-"+page);$$("[data-page]").forEach(b=>b.classList.toggle("active",b.dataset.page===page));window.scrollTo({top:0,behavior:"smooth"})}
 $$("[data-page]").forEach(b=>b.addEventListener("click",()=>{go(b.dataset.page);if(b.dataset.page==="profile")loadOwnProfileGrid();}));
-function openModal(id){$("#"+id).classList.add("show")}function closeModals(){$$(".overlay").forEach(x=>x.classList.remove("show"))}
+function openModal(id){$("#"+id).classList.add("show")}function closeModals(){stopStoryMusicPreview();const storyPlayer=$("#storyMusicPlayer");if(storyPlayer){storyPlayer.pause();storyPlayer.currentTime=0;}$(".overlay").forEach(x=>x.classList.remove("show"))}
 $$("[data-close]").forEach(b=>b.onclick=closeModals);$$(".overlay").forEach(o=>o.addEventListener("click",e=>{if(e.target===o)closeModals()}));
 $("#newPostBtn").onclick=$("#mobileCreate").onclick=()=>openModal("createModal");
 function showAuthError(e){$("#authError").textContent=e?.message?.replace("Firebase: ","")||"Something went wrong."}
@@ -237,21 +237,30 @@ function viewStory(s){
  $("#storyViewerContent").innerHTML=media+music;openModal("storyViewer");
  const player=$("#storyMusicPlayer");if(player){player.addEventListener("timeupdate",()=>{if(player.currentTime>=60){player.pause();player.currentTime=60;}});player.play().catch(()=>{});}
 }
-$("#addStoryBtn").onclick=()=>{selectedStorySong=null;$("#storyMusicSelected").textContent="No song selected";$("#storyMusicResults").innerHTML='<div class="subtle">Search Jamendo music and select a track.</div>';openModal("storyModal")};
-async function searchStoryMusic(){
+$("#addStoryBtn").onclick=()=>{stopStoryMusicPreview();selectedStorySong=null;$("#storyMusicSelected").textContent="No song selected";$("#storyMusicResults").innerHTML='<div class="subtle">Search Jamendo music and select a track.</div>';openModal("storyModal")};
+let storyMusicOffset=0,storyMusicQuery="",storyPreviewAudio=null;
+function stopStoryMusicPreview(reset=true){
+ if(storyPreviewAudio){storyPreviewAudio.pause();if(reset){try{storyPreviewAudio.currentTime=0}catch(_){}}}
+ document.querySelectorAll("[data-music-preview]").forEach(b=>b.textContent="▶ Play");
+}
+async function searchStoryMusic(loadMore=false){
  const q=$("#storyMusicSearch").value.trim(),box=$("#storyMusicResults"),btn=$("#storyMusicSearchBtn");
  if(!q)return toast("Enter a song or artist name.");
- btn.disabled=true;box.innerHTML='<div class="empty">Searching songs…</div>';
+ if(!loadMore){stopStoryMusicPreview();storyMusicOffset=0;storyMusicQuery=q;box.innerHTML='<div class="empty">Searching songs…</div>';}
+ else if(q!==storyMusicQuery){storyMusicOffset=0;storyMusicQuery=q;box.innerHTML="";}
+ btn.disabled=true;
+ let moreBtn=box.querySelector("#storyMusicLoadMore");if(moreBtn)moreBtn.remove();
  try{
   const url=new URL("https://api.jamendo.com/v3.0/tracks/");
   url.searchParams.set("client_id",JAMENDO_CLIENT_ID);url.searchParams.set("format","json");
-  url.searchParams.set("search",q);url.searchParams.set("limit","12");url.searchParams.set("audioformat","mp32");
-  url.searchParams.set("type","single albumtrack");
+  url.searchParams.set("search",q);url.searchParams.set("limit","30");url.searchParams.set("offset",String(storyMusicOffset));
+  url.searchParams.set("audioformat","mp32");url.searchParams.set("type","single albumtrack");
   const response=await fetch(url.toString());if(!response.ok)throw new Error("Music service returned "+response.status);
   const data=await response.json();if(data.headers?.status!=="success")throw new Error(data.headers?.error_message||"Music search failed.");
-  box.innerHTML="";
-  if(!data.results?.length){box.innerHTML='<div class="empty">No songs found. Try another search.</div>';return;}
-  data.results.forEach(track=>{
+  if(!loadMore)box.innerHTML="";
+  const tracks=data.results||[];
+  if(!tracks.length&&!loadMore){box.innerHTML='<div class="empty">No songs found. Try another search.</div>';return;}
+  tracks.forEach(track=>{
    const streamURL=track.audio||("https://api.jamendo.com/v3.0/tracks/file/?client_id="+encodeURIComponent(JAMENDO_CLIENT_ID)+"&id="+encodeURIComponent(track.id)+"&action=stream&audioformat=mp32");
    if(!track.id||!streamURL)return;
    const row=document.createElement("div");row.className="story-track";
@@ -260,13 +269,15 @@ async function searchStoryMusic(){
    const title=document.createElement("b");title.textContent=track.name||"Untitled";
    const artist=document.createElement("small");artist.className="subtle";artist.textContent=track.artist_name||"Unknown artist";
    info.append(title,artist);
-   const preview=document.createElement("button");preview.type="button";preview.textContent="▶ Play";
+   const preview=document.createElement("button");preview.type="button";preview.dataset.musicPreview="";preview.textContent="▶ Play";
    preview.onclick=async()=>{
-    let a=document.getElementById("jamendoPreview");
-    if(!a){a=document.createElement("audio");a.id="jamendoPreview";a.controls=true;a.preload="none";a.style.cssText="display:block;width:100%;margin:8px 0";box.append(a);}
-    try{if(a.src!==streamURL){a.pause();a.src=streamURL;}a.currentTime=0;await a.play();preview.textContent="▶ Playing";a.onended=()=>preview.textContent="▶ Play";}
-    catch(err){console.error("Jamendo preview playback:",err);toast("Song play nahi hua. Track unavailable ho sakta hai; doosra song try karo.");}
+    if(!storyPreviewAudio){storyPreviewAudio=new Audio();storyPreviewAudio.preload="none";}
+    if(storyPreviewAudio.src===streamURL&&!storyPreviewAudio.paused){storyPreviewAudio.pause();preview.textContent="▶ Play";return;}
+    stopStoryMusicPreview(false);
+    try{storyPreviewAudio.src=streamURL;storyPreviewAudio.currentTime=0;await storyPreviewAudio.play();preview.textContent="Ⅱ Pause";storyPreviewAudio.onended=()=>{preview.textContent="▶ Play";};storyPreviewAudio.onerror=()=>{preview.textContent="▶ Play";};}
+    catch(err){console.error("Jamendo preview playback:",err);toast("Song play nahi hua. Doosra track try karo.");}
    };
+   const stop=document.createElement("button");stop.type="button";stop.textContent="■ Stop";stop.onclick=()=>stopStoryMusicPreview(true);
    const choose=document.createElement("button");choose.type="button";choose.textContent="Select song";
    choose.onclick=()=>{
     selectedStorySong={id:String(track.id),name:track.name||"Untitled",artist:track.artist_name||"",url:streamURL,image:track.image||track.album_image||""};
@@ -274,11 +285,15 @@ async function searchStoryMusic(){
     box.querySelectorAll(".story-track").forEach(x=>{x.style.borderColor="var(--line)";});
     row.style.borderColor="var(--accent)";choose.textContent="✓ Selected";
    };
-   row.append(cover,info,preview,choose);box.append(row);
+   row.append(cover,info,preview,stop,choose);box.append(row);
   });
-  if(!box.children.length)box.innerHTML='<div class="empty">No tracks found.</div>';
- }catch(e){console.error("Jamendo search:",e);box.innerHTML='<div class="empty">Music search failed: '+safeText(e.message||"Try again.")+'</div>'}
- finally{btn.disabled=false}
+  storyMusicOffset+=tracks.length;
+  if(tracks.length===30){
+   const load=document.createElement("button");load.id="storyMusicLoadMore";load.type="button";load.className="secondary";load.textContent="Load more songs";load.style.cssText="display:block;width:100%;margin:12px 0";
+   load.onclick=()=>searchStoryMusic(true);box.append(load);
+  }else if(loadMore&&!tracks.length){toast("Aur songs nahi mile.");}
+ }catch(e){console.error("Jamendo search:",e);if(!loadMore)box.innerHTML="";const err=document.createElement("div");err.className="empty";err.textContent="Music search failed: "+(e.message||"Try again.");box.append(err);}
+ finally{btn.disabled=false;}
 }
 $("#storyMusicSearchBtn").onclick=searchStoryMusic;
 $("#storyMusicSearch").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();searchStoryMusic()}});
