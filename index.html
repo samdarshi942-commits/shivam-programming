@@ -172,7 +172,33 @@ $("#saveProfile").onclick=async()=>{
   await updateProfile(user,{displayName});userData.displayName=displayName;userData.bio=bio;renderProfile();closeModals();toast("Profile updated.");
  }catch(e){toast(e.message||"Profile update failed.");}
 };
-async function toggleFollow(uid,btn){if(!user||uid===user.uid)return;const following=(userData.following||[]).includes(uid);try{const batch=writeBatch(db);const mine=doc(db,"publicProfiles",user.uid),other=doc(db,"publicProfiles",uid);batch.update(mine,{following:following?arrayRemove(uid):arrayUnion(uid)});batch.update(other,{followers:following?arrayRemove(user.uid):arrayUnion(user.uid)});await batch.commit();userData.following=following?(userData.following||[]).filter(x=>x!==uid):[...(userData.following||[]),uid];if(btn){btn.textContent=following?"Follow":"Following";btn.classList.toggle("following",!following)}renderProfile();toast(following?"Unfollowed":"Following");}catch(e){toast("Follow failed: "+e.message)}}
+async function toggleFollow(uid,btn){
+ if(!user||!uid||uid===user.uid)return;
+ if(btn)btn.disabled=true;
+ try{
+  const mineRef=doc(db,"publicProfiles",user.uid),otherRef=doc(db,"publicProfiles",uid);
+  const [mineSnap,otherSnap]=await Promise.all([getDoc(mineRef),getDoc(otherRef)]);
+  if(!mineSnap.exists())throw Error("Your public profile is missing. Please sign out and sign in again.");
+  if(!otherSnap.exists())throw Error("This user's public profile is not available.");
+  const mineData=mineSnap.data(),otherData=otherSnap.data();
+  const myFollowing=Array.isArray(mineData.following)?mineData.following:[];
+  const theirFollowers=Array.isArray(otherData.followers)?otherData.followers:[];
+  const following=myFollowing.includes(uid);
+  const batch=writeBatch(db);
+  batch.update(mineRef,{following:following?arrayRemove(uid):arrayUnion(uid)});
+  // Avoid writing an unchanged follower array; Firestore rules correctly reject no-op relationship writes.
+  if(following&&theirFollowers.includes(user.uid))batch.update(otherRef,{followers:arrayRemove(user.uid)});
+  else if(!following&&!theirFollowers.includes(user.uid))batch.update(otherRef,{followers:arrayUnion(user.uid)});
+  await batch.commit();
+  userData.following=following?myFollowing.filter(x=>x!==uid):[...myFollowing,uid];
+  if(btn){btn.textContent=following?"Follow":"Following";btn.classList.toggle("following",!following)}
+  renderProfile();
+  toast(following?"Unfollowed":"Following");
+ }catch(e){
+  console.error("Follow update failed:",e);
+  toast("Follow failed: "+(e.code==="permission-denied"?"Firestore Rules allow nahi kar rahe. Firebase Console me latest firestore.rules Publish karo.":e.message));
+ }finally{if(btn)btn.disabled=false}
+}
 async function createNotification(recipientUid,type,text,sourceId="",sourceType="post"){
  if(!user||!recipientUid||recipientUid===user.uid)return;
  try{await addDoc(collection(db,"users",recipientUid,"notifications"),{recipientUid,actorUid:user.uid,actorName:userData.displayName||"Member",type,text,sourceId,sourceType,read:false,createdAt:serverTimestamp()});}
